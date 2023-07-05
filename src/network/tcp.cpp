@@ -115,7 +115,7 @@ void TCP::server(string server[]){
          }
          tcp->clnt_cnt++;
          mutx.unlock();
-         printf("%s: connect  [ SUCCESS ] \n", inet_ntoa(clnt_adr.sin_addr));
+         printf("[INFO]%s: SUCCESS TO CONNECTION \n", inet_ntoa(clnt_adr.sin_addr));
       }
    }
 }
@@ -143,13 +143,13 @@ void TCP::client_t(const char* ip, string server[]){
    }
 }
 void TCP::connect_tcp(const char* ip, string server[], int number_of_server, int Port){
-   cerr << "Connecting tcp" <<endl;
+   //cerr << "[INFO]Connecting tcp" <<endl;
    tcp->num_of_server = number_of_server;
    tcp->Port = Port;
    std::thread serv = std::thread(&TCP::server,TCP(), server); //서버함수 쓰레드로 실행
    TCP::client_t(ip, server);
    serv.join();
-   cerr << "Connection completely success" << endl;
+   //cerr << "Connection completely success" << endl;
   
 }
 map<string, string> TCP::read_rdma_info(int ip){

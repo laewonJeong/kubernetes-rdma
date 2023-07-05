@@ -193,7 +193,7 @@ void myRDMA::rdma_send_msg(string opcode, string msg){
     }
     else if(opcode == "write_with_imm"){
         vector<double> a;
-        cerr << "write_with_imm_rdma run" <<endl;
+        //cerr << "write_with_imm_rdma run" <<endl;
         for(int i=0;i<myrdma.connect_num;i++){
             myRDMA::rdma_write_vector(a, i);
         }
@@ -305,7 +305,7 @@ void myRDMA::send_info_change_qp(){
     //Send RDMA info
     for(int k = 0;k<2;k++){
         int *clnt_socks = tcp.client_sock();
-        cerr << "Sending rdma info[" << k << "]... ";
+        cout << "[INFO]SEND RDMA INFO[" << k << "] ";
         if(k==0){
             for(int idx=0; idx < myrdma.connect_num+1; idx++){
                 if(clnt_socks[idx]!=0){
@@ -333,10 +333,10 @@ void myRDMA::send_info_change_qp(){
             tcp.send_msg(change(to_string(rdma_info1[k][j].qp_num)+"\n"),myrdma.sock_idx[j]);
             
         }
-        cerr << "[ SUCCESS ]" <<endl;
+        cout<< "- SUCCESS" <<endl;
         //Read RDMA info
         map<string, string> read_rdma_info;
-        cerr << "Changing queue pair...  ";
+        cout << "[INFO]CHANGE QUEUE PAIR STATE ";
         for(int i=0;i<myrdma.connect_num;i++){
             if(k == 0 || k == 1){
                 read_rdma_info = tcp.read_rdma_info(myrdma.sock_idx[i]);
@@ -353,15 +353,15 @@ void myRDMA::send_info_change_qp(){
                 }   
             }
         }
-        cerr << "[ SUCCESS ]" << endl;
+        cout << "- SUCCESS" << endl;
     }
-    cerr << "Completely success" << endl;
+    //cerr << "Completely success" << endl;
 }
 void myRDMA::create_rdma_info(vector<double> *send, vector<double> *recv){
     RDMA rdma;
     TCP tcp;
-    cout << "Creating rdma info...   ";
-   cout << endl;
+    cout << "[INFO]CREATE RDMA INFO ";
+   
     for(int j =0;j<2;j++){
         
         if(j == 1){
@@ -372,63 +372,33 @@ void myRDMA::create_rdma_info(vector<double> *send, vector<double> *recv){
                 struct ibv_cq* completion_queue = ibv_create_cq(context, cq_size, nullptr, nullptr, 0);
                 struct ibv_qp* qp = rdma.createQueuePair(protection_domain, completion_queue);
                 struct ibv_mr *mr = rdma.registerMemoryRegion(protection_domain, 
-                                                        recv[i].data(), sizeof(double)*recv[i].size());//sizeof(myrdma.recv[i].data()));
+                                                        recv[i].data(), sizeof(double)*(myrdma.num_of_vertex));//sizeof(myrdma.recv[i].data()));
                 uint16_t lid = rdma.getLocalId(context, PORT);
                 uint32_t qp_num = rdma.getQueuePairNumber(qp);
                 rdma_info1[j].emplace_back(RdmaInfo{context,protection_domain,cq_size,completion_queue,qp,mr,lid,qp_num});
-                cout << "clear" << endl;
             }
         }
         else{
             for(int i =0;i<myrdma.connect_num;i++){
-                cout << "=============="<< i << " start==============" << endl;
                 struct ibv_context* context = rdma.createContext();
-                cout << context << endl;
-                struct ibv_pd* protection_domain = ibv_alloc_pd(context);
-                cout << protection_domain << endl;
+                //struct ibv_pd* protection_domain = ibv_alloc_pd(context);
+                //cout << "ibv_pd" << endl;
                 int cq_size = 0x10;
                 struct ibv_cq* completion_queue = ibv_create_cq(context, cq_size, nullptr, nullptr, 0);
-                cout << completion_queue << endl;
-
-                struct ibv_qp_init_attr queue_pair_init_attr;
-                printf("ibv_qp_init_attr clear/");
-                memset(&queue_pair_init_attr, 0, sizeof(queue_pair_init_attr));
-                printf("memset clear/");
-                queue_pair_init_attr.qp_type = IBV_QPT_RC;
-                queue_pair_init_attr.sq_sig_all = 1;       
-                queue_pair_init_attr.send_cq = completion_queue;         
-                queue_pair_init_attr.recv_cq = completion_queue;         
-                queue_pair_init_attr.cap.max_send_wr = 1;  
-                queue_pair_init_attr.cap.max_recv_wr = 1;  
-                queue_pair_init_attr.cap.max_send_sge = 1; 
-                queue_pair_init_attr.cap.max_recv_sge = 1; 
-                cout << &queue_pair_init_attr << endl;
-
-
-                struct ibv_qp* qp = ibv_create_qp(protection_domain, &queue_pair_init_attr);
-                if(qp == 0){
-                    cout << "create_qp error" << endl;
-                    exit(0);
-                }
-                cout << qp << endl;
-               
+                struct ibv_pd* protection_domain = ibv_alloc_pd(context);
+                struct ibv_qp* qp = rdma.createQueuePair(protection_domain, completion_queue);
                 struct ibv_mr *mr = rdma.registerMemoryRegion(protection_domain, 
-                                                        myrdma.send[i].data(), sizeof(double)*myrdma.send[i].size());//sizeof(myrdma.send[i].data()));
-                cout << mr << endl;
+                                                        send[i].data(), sizeof(double)*(myrdma.num_of_vertex));//sizeof(myrdma.send[i].data()));
                 uint16_t lid = rdma.getLocalId(context, PORT);
-                cout << lid << endl;
-                uint32_t qp_num = qp->qp_num;
-                cout << qp_num << endl;
+                uint32_t qp_num = rdma.getQueuePairNumber(qp);
                 rdma_info1[j].emplace_back(RdmaInfo{context,protection_domain,cq_size,completion_queue,qp,mr,lid,qp_num});
-                cout << "clear" << endl;
             }
-            cout << "===============finish 1 ==================" << endl;
         }
         //}
       
     }
     
-    cerr << "[ SUCCESS ]" << endl;
+    cout << " - SUCCESS" << endl;
 }
 void myRDMA::set_buffer(char send[][buf_size], char recv[][buf_size], int num_of_server){
     myrdma.send_buffer = &send[0];
@@ -439,8 +409,8 @@ void myRDMA::set_buffer(char send[][buf_size], char recv[][buf_size], int num_of
 void myRDMA::initialize_rdma_connection(const char* ip, string server[], int number_of_server, int Port, char send[][buf_size], char recv[][buf_size]){
     TCP tcp;
     tcp.connect_tcp(ip, server, number_of_server, Port);
-    myrdma.send_buffer = &send[0];
-    myrdma.recv_buffer = &recv[0];
+    //myrdma.send_buffer = &send[0];
+    //myrdma.recv_buffer = &recv[0];
     myrdma.connect_num = number_of_server - 1;
 }
 void myRDMA::initialize_rdma_connection_vector(const char* ip, string server[], int number_of_server, int Port, vector<double> *send, vector<double> *recv, int num_of_vertex){
@@ -463,8 +433,8 @@ void myRDMA::initialize_rdma_connection_vector(const char* ip, string server[], 
         send_adrs.push_back(myrdma.send[i].data());
         recv_adrs.push_back(myrdma.recv[i].data());
     }
-    //rdma_info1[0].reserve(10000);
-    //rdma_info1[1].reserve(10000);
+    rdma_info1[0].reserve(10000);
+    rdma_info1[1].reserve(10000);
     
     myrdma.connect_num = number_of_server - 1;
 }

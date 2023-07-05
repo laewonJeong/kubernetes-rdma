@@ -58,9 +58,7 @@ struct ibv_context* RDMA::createContext() {
 
 struct ibv_qp* RDMA::createQueuePair(struct ibv_pd* pd, struct ibv_cq* cq) {
   struct ibv_qp_init_attr queue_pair_init_attr;
-  printf("ibv_qp_init_attr clear/");
   memset(&queue_pair_init_attr, 0, sizeof(queue_pair_init_attr));
-  printf("memset clear/");
   queue_pair_init_attr.qp_type = IBV_QPT_RC;
   queue_pair_init_attr.sq_sig_all = 1;       
   queue_pair_init_attr.send_cq = cq;         
@@ -69,7 +67,6 @@ struct ibv_qp* RDMA::createQueuePair(struct ibv_pd* pd, struct ibv_cq* cq) {
   queue_pair_init_attr.cap.max_recv_wr = 1;  
   queue_pair_init_attr.cap.max_send_sge = 1; 
   queue_pair_init_attr.cap.max_recv_sge = 1; 
-  printf("init clear/\n");
   return ibv_create_qp(pd, &queue_pair_init_attr);
 }
 

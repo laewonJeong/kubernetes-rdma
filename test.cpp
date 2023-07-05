@@ -101,8 +101,8 @@ void create_graph_data(string path, int rank, string del){
             to = line.substr(pos+1);
             add_arc(strtol(from.c_str(), NULL, 10),strtol(to.c_str(), NULL, 10));
             line_num++;
-            if(rank == 0 && line_num%500000 == 0)
-                cerr << "Create " << line_num << " lines" << endl; 
+            //if(rank == 0 && line_num%500000 == 0)
+            //    cerr << "Create " << line_num << " lines" << endl; 
             //if(line_num%500000 == 0)
                 //cerr << "Create " << line_num << " lines" << endl;
 		}
@@ -122,35 +122,70 @@ int main(int argc, char** argv){
     int rank, size, i ,j;
     int start, end;
     int a,b;
+    long double network_time = 0;
+    long double compute_time = 0;
     struct timespec begin1, end1 ;
     struct timespec begin2, end2 ;
     //string my_ip(argv[1]);
 
     TCP tcp;
+    
+    
 
-    cout << "check my ip" << endl;
-    string my_ip = tcp.check_my_ip();
-    cout << "finish! this pod's ip is " <<my_ip << endl;
-
-    cout << "Changing domain to ip ..." << endl;
-    for(int i = 0 ;i < num_of_node;i++){
-        node[i]=tcp.domain_to_ip(node_domain[i]);
-        cout << node_domain[i] << " ----> " << node[i] <<endl;
-    }
-    cout << "Success" << endl;
 
     //MPI Init
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
+    string my_ip = tcp.check_my_ip();
+    if(rank == 0){
+        cout << "[INFO]POD IP: " << my_ip << endl;
+    }
+    if(rank == 0){
+        for(int i = 0 ;i < num_of_node;i++){
+            node[i]=tcp.domain_to_ip(node_domain[i]);
+            cout <<"[INFO]" <<node_domain[i] << " ----> " << node[i] <<endl;
+        }
+    }
+
+    int node_ip_length;
+    char* node_ip;
+    if (rank == 0) {
+        for (int i = 0; i < num_of_node; i++) {
+            node_ip_length = node[i].length() + 1;
+            MPI_Bcast(&node_ip_length, 1, MPI_INT, 0, MPI_COMM_WORLD);
+            node_ip = new char[node_ip_length];
+            strcpy(node_ip, node[i].c_str());
+            MPI_Bcast(node_ip, node_ip_length, MPI_CHAR, 0, MPI_COMM_WORLD);
+            delete[] node_ip;
+        }
+    } else {
+        for (int i = 0; i < num_of_node; i++) {
+            MPI_Bcast(&node_ip_length, 1, MPI_INT, 0, MPI_COMM_WORLD);
+            node_ip = new char[node_ip_length];
+            MPI_Bcast(node_ip, node_ip_length, MPI_CHAR, 0, MPI_COMM_WORLD);
+            string s = node_ip;
+            node[i] = s;
+            delete[] node_ip;
+        }
+    }
+    if(rank == 0){
+        cout << "[INFO]FINISH DOMAIN TO IP" << endl;
+        cout << "=====================================================" << endl;
+        cout << "[INFO]CREATE GRAPH" << endl;
+    }
     
 
 
     // Create Graph
     //if(rank == 0)
-    create_graph_data(argv[1],rank,argv[2]);
+    clock_gettime(CLOCK_MONOTONIC, &begin1);
     
+    create_graph_data(argv[1],rank,argv[2]);      
+    
+    clock_gettime(CLOCK_MONOTONIC, &end1);
+    long double create_graph_time = (end1.tv_sec - begin1.tv_sec) + (end1.tv_nsec - begin1.tv_nsec) / 1000000000.0;
     
     /*for(int i=0;i<num_of_vertex;i++)
         MPI_Bcast(graph[i].data(), graph[i].size(), MPI_INT,0,MPI_COMM_WORLD);*/
@@ -163,6 +198,9 @@ int main(int argc, char** argv){
     vector<double> send[num_of_node];
     vector<double> recv1[num_of_node];
     if(rank == 0){
+        cout << "[INFO]FINISH CREATE GRAPH " <<  create_graph_time << "s. " << endl;
+        cout << "=====================================================" << endl;
+        cout << "[INFO]NETWORK CONFIGURATION" << endl;
         myrdma.initialize_rdma_connection_vector(my_ip.c_str(),node,num_of_node,port,send,recv1,num_of_vertex);
         myrdma.create_rdma_info(send, recv1);
         myrdma.send_info_change_qp();
@@ -248,7 +286,7 @@ int main(int argc, char** argv){
             start += end_arr[0];
             end += end_arr[0];
         }
-        cout << "start, end: " << start <<", "<< end << endl;
+        //cout << "start, end: " << start <<", "<< end << endl;
     }
     else{
          for(int i=0;i<num_of_node;i++){
@@ -328,9 +366,10 @@ int main(int argc, char** argv){
     //vector<double> gather_pr;
     //gather_pr.resize(num_of_vertex);
     vector<double> div_send;
+    long double time3;
     //recv1[0].resize(num_of_vertex, 1/num_of_vertex);
     double* recv_buffer_ptr = recv1[0].data();
-    //double* send_buffer_ptr = send[0].data();
+    double* send_buffer_ptr = send[0].data();
 
     if(my_ip != node[0])
         div_send.resize(end-start);
@@ -346,13 +385,15 @@ int main(int argc, char** argv){
     //===============================================================================
     for(step =0;step<10000000;step++){
         
-        if(rank == 0 || my_ip == node[0])
-            cout <<"====="<< step+1 << " step=====" <<endl;
+        if(rank == 0 || my_ip == node[0]){
+            cout <<"================STEP "<< step+1 << "================" <<endl;
+            
+        }
         dangling_pr = 0.0;
-        //gather_pr = recv1[0];
+
         if(step!=0) {
+            clock_gettime(CLOCK_MONOTONIC, &begin1);
             if(my_ip != node[0]){
-                //recv1[0] = gather_pr;
                 for (size_t i=0;i<num_of_vertex;i++) {
                     if (num_outgoing[i] == 0)
                         dangling_pr += recv1[0][i];   
@@ -363,13 +404,20 @@ int main(int argc, char** argv){
                 for (size_t i=0;i<num_of_vertex;i++) 
                     diff += fabs(prev_pr[i] - send[0][i]);
             }
+            clock_gettime(CLOCK_MONOTONIC, &end1);
+            time3 = (end1.tv_sec - begin1.tv_sec) + (end1.tv_nsec - begin1.tv_nsec) / 1000000000.0;
+            compute_time+=time3;
         }
         //===============================================================================
         if(my_ip != node[0]){
-            //clock_gettime(CLOCK_MONOTONIC, &begin1);
+            if(rank == 0)
+                cout << "[INFO]COMPUTE PAGERANK" <<endl;
+            clock_gettime(CLOCK_MONOTONIC, &begin1);
+            int idx;
             for(size_t i=start;i<end;i++){
                 //cout << i << endl;
                 //
+                idx = i-start;
                 double tmp = 0.0;
                 const size_t graph_size = graph[i].size();
                 const size_t* graph_ptr = graph[i].data();
@@ -380,16 +428,32 @@ int main(int argc, char** argv){
 
                     tmp += recv_buffer_ptr[from_page] * inv_num_outgoing;
                 }
-                div_send[i-start] = (tmp + dangling_pr * inv_num_of_vertex) * df + df_inv * inv_num_of_vertex;
+                send_buffer_ptr[idx] = (tmp + dangling_pr * inv_num_of_vertex) * df + df_inv * inv_num_of_vertex;
             }
-            //clock_gettime(CLOCK_MONOTONIC, &end1);
-            //long double time3 = (end1.tv_sec - begin1.tv_sec) + (end1.tv_nsec - begin1.tv_nsec) / 1000000000.0;
+            clock_gettime(CLOCK_MONOTONIC, &end1);
+            time3 = (end1.tv_sec - begin1.tv_sec) + (end1.tv_nsec - begin1.tv_nsec) / 1000000000.0;
+            compute_time += time3;
+            /*if(rank == 0)
+                printf("%Lfs.\n", time3);*/
             //printf("%d: calc 수행시간: %Lfs.\n", rank, time3);
+            MPI_Allgather(&check, 1, MPI_INT, check1, 1, MPI_INT, MPI_COMM_WORLD);
+            //---------------------------------------------------------------------------------------------------------------------
+            clock_gettime(CLOCK_MONOTONIC, &begin1);
+            
             
             MPI_Allgatherv(div_send.data(),div_send.size(),MPI_DOUBLE,send[0].data(),recvcounts,displs,MPI_DOUBLE,MPI_COMM_WORLD);
-            //cout << div_send[0] << ", " << div_send[div_num_of_vertex-1] << endl;
+            
+            clock_gettime(CLOCK_MONOTONIC, &end1);
+            time3 = (end1.tv_sec - begin1.tv_sec) + (end1.tv_nsec - begin1.tv_nsec) / 1000000000.0;
+            
+            if(rank ==0){
+                cout << "[INFO]START MPI_ALLGATHERV - SUCCESS" << endl;
+                //printf("%Lfs\n", time3);
+                network_time += time3;
+            }    
+            //printf("%d: allgatherv 수행시간: %Lfs.\n", rank, time3);
 
-            long double time1 = (end1.tv_sec - begin1.tv_sec) + (end1.tv_nsec - begin1.tv_nsec) / 1000000000.0;
+            //long double time1 = (end1.tv_sec - begin1.tv_sec) + (end1.tv_nsec - begin1.tv_nsec) / 1000000000.0;
             
             //MPI_Allgather(div_send.data(),div_send.size(),MPI_DOUBLE,send[0].data(),div_send.size(),MPI_DOUBLE,MPI_COMM_WORLD);
         }
@@ -400,7 +464,7 @@ int main(int argc, char** argv){
         clock_gettime(CLOCK_MONOTONIC, &begin1);
         if(my_ip == node[0]){
             myrdma.recv_t("send");
-            cout << "recv1 success" << endl;
+            cout << "[INFO]START RECEIVE - SUCCESS" << endl;
             send[0].clear();
 
             for(size_t i=0;i<num_of_node-1;i++){
@@ -412,24 +476,32 @@ int main(int argc, char** argv){
                 send[0][0] += 1; 
             
             fill(&send[1], &send[num_of_node-1], send[0]);
+            cout << "[INFO]START AGGREGATE - SUCCESS" << endl;
         }
         else{
             if(rank == 0){
+                cout << "[INFO]START SEND_RDMA - SUCCESS" << endl;
                 myrdma.rdma_write_vector(send[0],0);
-                //cout << "send success" << endl;
             }
             
             
         }
         clock_gettime(CLOCK_MONOTONIC, &end1);
         long double time1 = (end1.tv_sec - begin1.tv_sec) + (end1.tv_nsec - begin1.tv_nsec) / 1000000000.0;
-        //if(rank == 0)
-            //printf("%d: send 수행시간: %Lfs.\n", rank, time1); 
+        if(rank == 0)
+            network_time+=time1;
+        //printf("%d: send 수행시간: %Lfs.\n", rank, time1); 
         //===============================================================================
-        clock_gettime(CLOCK_MONOTONIC, &begin1);
         if(my_ip == node[0]){
-             for(size_t i = 0; i<num_of_node-1;i++)
+            clock_gettime(CLOCK_MONOTONIC, &begin1);
+            
+            for(size_t i = 0; i<num_of_node-1;i++)
                 myrdma.rdma_write_pagerank(send[0],i);
+            cout << "[INFO]START SEND - SUCCESS" << endl;
+
+            clock_gettime(CLOCK_MONOTONIC, &end1);
+            time1 = (end1.tv_sec - begin1.tv_sec) + (end1.tv_nsec - begin1.tv_nsec) / 1000000000.0;
+            //printf("%d: send 수행시간: %Lfs.\n", rank, time1);
         }
         else{
             MPI_Request request;
@@ -437,7 +509,23 @@ int main(int argc, char** argv){
             //MPI_Bcast(recv1[0].data(), recv1[0].size(), MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
             if(rank == 0){
+                clock_gettime(CLOCK_MONOTONIC, &begin1);
+
                 myrdma.rdma_recv_pagerank(0);
+                cout << "[INFO]START RECEIVE_RDMA - SUCCESS" << endl;
+
+                //est_buf[0] = recv1[0];
+                clock_gettime(CLOCK_MONOTONIC, &end1);
+                time1 = (end1.tv_sec - begin1.tv_sec) + (end1.tv_nsec - begin1.tv_nsec) / 1000000000.0;
+                network_time += time1;
+                //printf("%d: rdma_recv 수행시간: %Lfs.\n", rank, time1);
+            }
+            //MPI_Bcast(recv1[0].data(), recv1[0].size(), MPI_DOUBLE, 0, MPI_COMM_WORLD);
+            //MPI_Allgather(&check, 1, MPI_INT, check1, 1, MPI_INT, MPI_COMM_WORLD);
+            
+            clock_gettime(CLOCK_MONOTONIC, &begin1);
+            if(rank == 0){
+                cout << "[INFO]START MPI_BCAST - SUCCESS\n" << endl; 
                 for(size_t dest=1; dest<size; dest++){
                     MPI_Isend(recv_buffer_ptr, num_of_vertex, MPI_DOUBLE, dest, 32548, MPI_COMM_WORLD, &request);
                 }
@@ -446,7 +534,25 @@ int main(int argc, char** argv){
                 MPI_Irecv(recv_buffer_ptr, num_of_vertex, MPI_DOUBLE, 0, 32548, MPI_COMM_WORLD, &request);
                 MPI_Wait(&request, MPI_STATUS_IGNORE);
             }
-
+            clock_gettime(CLOCK_MONOTONIC, &end1);
+            time1 = (end1.tv_sec - begin1.tv_sec) + (end1.tv_nsec - begin1.tv_nsec) / 1000000000.0;
+            
+            if(rank == 0){
+                network_time += time1;
+                printf("COMPUTE PAGERANK:  %LFs.\n", compute_time);
+                printf("NETWORK(MPI+RDMA): %Lfs.\n", network_time);
+                printf("STEP %ld EXECUTION TIME: %Lfs.\n", step+1, compute_time + network_time);
+                network_time = 0;
+                compute_time = 0;
+            }
+            //printf("%d: mpi_broadcast 수행시간: %Lfs.\n", rank, time1);
+            /*if(rank == 0){
+                myrdma.rdma_recv_pagerank(0);
+            }*/
+            //double* recv_buffer_ptr = recv1[0].data();
+            //cout << recv1[0].size() << endl;
+            //cout << recv1[0].data() << endl;
+            
             
             
         }
@@ -455,7 +561,8 @@ int main(int argc, char** argv){
         //if(rank == 0)
          //   printf("%d: recv1 수행시간: %Lfs.\n", rank, time1);
         if(my_ip == node[0] && rank == 0)
-            cout << "diff: " <<diff << endl;
+            cout << "[INFO]DIFF: " <<diff << endl;
+       
         
         if(diff < 0.00001 || recv1[0][0] > 1){
             break;
@@ -467,18 +574,33 @@ int main(int argc, char** argv){
     //===============================================================================
     
     if(my_ip != node[0] && rank == 0){
+        cout << "=====================================================" << endl;
         double sum1 = accumulate(recv1[0].begin(), recv1[0].end(), -1.0);
         cout.precision(numeric_limits<double>::digits10);
         for(size_t i=num_of_vertex-200;i<num_of_vertex;i++){
             cout << "pr[" <<i<<"]: " << recv1[0][i] <<endl;
         }
-        cerr << "s = " <<sum1 << endl;
+        cout << "=====================================================" << endl;
+        int important = 0;
+        string result = "";
+        double important_pr = recv1[0][0]-1;
+        double tmp1 = important_pr;
+        for (int i=1;i< num_of_vertex;i++){
+            important_pr = max(important_pr, recv1[0][i]);
+            if(tmp1 != important_pr){
+                important = i;
+                tmp1 = important_pr;
+            }
+        }
+
+        cout << "[INFO]IMPORTANT VERTEX: " << important << "\n[INFO]" << important << "'S VALUE: "<<tmp1 << endl;
+       // cout << "s = " <<round(sum1) << endl;
         //printf("총 수행시간: %Lfs.\n", time2);
     }
-    if(rank == 0|| my_ip == node[0])
-        printf("총 수행시간: %Lfs.\n", time2);
+    if(rank == 0|| my_ip == node[0]){
+        printf("[INFO]TOTAL EXECUTION TIME: %Lfs.\n", time2);
+        cout << "=====================================================" << endl;
+    }
     MPI_Finalize();
-
-    cout << "끝" << endl;
     while(1){}
 }
